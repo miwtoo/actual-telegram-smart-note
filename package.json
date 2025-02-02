@@ -7,5 +7,10 @@
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@actual-app/api": "^25.1.0",
+    "openai": "^4.82.0",
+    "telegraf": "^4.16.3"
   }
 }
