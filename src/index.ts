@@ -7,6 +7,7 @@ import {
 } from "@google/generative-ai";
 import { SchemaType } from "@google/generative-ai/server";
 import dayjs from "dayjs";
+import type { APIAccountEntity } from "@actual-app/api/@types/loot-core/server/api-models";
 
 process.loadEnvFile("./.env");
 
@@ -261,10 +262,10 @@ class Main {
 						categoryMap.get(transaction.category ?? "") || transaction.category,
 				};
 
-				// await this.actualBudgetService.addTransaction(
-				// 	updatedTransactionToId.account,
-				// 	[updatedTransactionToId],
-				// );
+				await this.actualBudgetService.addTransaction(
+					updatedTransactionToId.account,
+					[updatedTransactionToId],
+				);
 				ctx.reply(
 					`Transaction details: ${JSON.stringify(updatedTransactionToId, null, 2)}`,
 				);

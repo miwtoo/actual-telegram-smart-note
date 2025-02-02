@@ -2,6 +2,9 @@
   "name": "actual-telegram-smart-note",
   "module": "index.ts",
   "type": "module",
+  "scripts": {
+    "start": "node src/index.ts"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
