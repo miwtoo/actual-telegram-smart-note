@@ -11,6 +11,12 @@ importers:
       '@actual-app/api':
         specifier: ^25.1.0
         version: 25.1.0
+      '@google/generative-ai':
+        specifier: ^0.21.0
+        version: 0.21.0
+      dayjs:
+        specifier: ^1.11.13
+        version: 1.11.13
       openai:
         specifier: ^4.82.0
         version: 4.82.0
@@ -33,6 +39,10 @@ packages:
 
   '@actual-app/crdt@2.1.0':
     resolution: {integrity: sha512-Qb8hMq10Wi2kYIDj0fG4uy00f9Mloghd+xQrHQiPQfgx022VPJ/No+z/bmfj4MuFH8FrPiLysSzRsj2PNQIedw==}
+
+  '@google/generative-ai@0.21.0':
+    resolution: {integrity: sha512-7XhUbtnlkSEZK15kN3t+tzIMxsbKm/dSkKBFalj+20NvPKe1kBY7mR2P7vuijEn+f06z5+A8bVGKO0v39cr6Wg==}
+    engines: {node: '>=18.0.0'}
 
   '@telegraf/types@7.1.0':
     resolution: {integrity: sha512-kGevOIbpMcIlCDeorKGpwZmdH7kHbqlk/Yj6dEpJMKEQw5lk0KVQY0OLXaCswy8GqlIVLd5625OB+rAntP9xVw==}
@@ -103,6 +113,9 @@ packages:
   data-uri-to-buffer@4.0.1:
     resolution: {integrity: sha512-0R9ikRb668HB7QDxT1vkpuUBtqc53YyAwMwGeUFKRojY/NWKvdZ+9UYtRfGmhqNbRkTSVpMbmyhXipFFv2cb/A==}
     engines: {node: '>= 12'}
+
+  dayjs@1.11.13:
+    resolution: {integrity: sha512-oaMBel6gjolK862uaPQOVTA7q3TZhuSvuMQAAglQDOWYO9A91IrAOUJEyKVlqJlHE0vq5p5UXxzdPfMH/x6xNg==}
 
   debug@4.4.0:
     resolution: {integrity: sha512-6WTZ/IxCY/T6BALoZHaE4ctp9xm+Z5kY/pzYaCHRFeyVhojxlrm+46y68HA6hr0TcwEssoxNiDEUJQjfPZ/RYA==}
@@ -367,6 +380,8 @@ snapshots:
       murmurhash: 2.0.1
       uuid: 9.0.1
 
+  '@google/generative-ai@0.21.0': {}
+
   '@telegraf/types@7.1.0': {}
 
   '@types/bun@1.2.2':
@@ -445,6 +460,8 @@ snapshots:
   compare-versions@6.1.1: {}
 
   data-uri-to-buffer@4.0.1: {}
+
+  dayjs@1.11.13: {}
 
   debug@4.4.0:
     dependencies:
