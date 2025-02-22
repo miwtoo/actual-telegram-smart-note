@@ -50,11 +50,53 @@ class GeminiService implements AIService {
 	}
 
 	async parseTransaction(
-		text: string,
+		input: { text?: string; imageUrl?: string },
 		accountNames: string[],
 		categoryNames: string[],
 	): Promise<Transaction | null> {
-		const generationConfig: GenerationConfig = {
+		try {
+			const chatSession = this.model.startChat({
+				generationConfig: this.getGenerationConfig(),
+				history: [
+					{
+						role: "user",
+						parts: [
+							{
+								text: `Extract transaction details from user input. default date is today ${dayjs().format("YYYY-MM-DD")}. with the following Account Name: ${accountNames}, Category Name: ${categoryNames}. using negative amount for expense and positive amount for income.`,
+							},
+						],
+					},
+				],
+			});
+
+			const messageParts = [];
+			
+			const { imageUrl, text } = input;
+			if (imageUrl) {
+				const imageResponse = await fetch(imageUrl);
+				const imageData = await imageResponse.arrayBuffer();
+				messageParts.push({
+					inlineData: {
+						data: Buffer.from(imageData).toString('base64'),
+						mimeType: "image/jpeg"
+					}
+				});
+			}
+			
+			if (text) {
+				messageParts.push({ text });
+			}
+
+			const result = await chatSession.sendMessage(messageParts);
+			return JSON.parse(result.response.text()) as Transaction;
+		} catch (error) {
+			console.error("Error parsing transaction:", error);
+			return null;
+		}
+	}
+
+	private getGenerationConfig(): GenerationConfig {
+		return {
 			temperature: 1,
 			topP: 0.95,
 			topK: 40,
@@ -85,26 +127,6 @@ class GeminiService implements AIService {
 				required: ["account", "date", "amount"],
 			},
 		};
-		const chatSession = this.model.startChat({
-			generationConfig,
-			history: [
-				{
-					role: "user",
-					parts: [
-						{
-							text: `Extract transaction details from user input. default date is today ${dayjs().format("YYYY-MM-DD")}. with the following Account Name: ${accountNames}, Category Name: ${categoryNames}. using negative amount for expense and positive amount for income.`,
-						},
-					],
-				},
-			],
-		});
-
-		const result = await chatSession.sendMessage(text);
-		const transaction: Transaction = JSON.parse(
-			result.response.text(),
-		) as Transaction;
-
-		return transaction;
 	}
 }
 
@@ -178,7 +200,7 @@ class ActualBudgetService {
 
 interface AIService {
 	parseTransaction(
-		text: string,
+		input: { text?: string; imageUrl?: string },
 		accountNames: string[],
 		categoryNames: string[],
 	): Promise<Transaction | null>;
@@ -193,6 +215,7 @@ class TelegramBot {
 
 	commandTransaction(callback: (ctx: Context) => void) {
 		this.bot.command("trx", callback);
+		this.bot.on("photo", callback);
 	}
 
 	currentBot() {
@@ -225,7 +248,21 @@ class Main {
 		// console.log("Categories:", categories);
 
 		this.telegramBotService.commandTransaction(async (ctx) => {
-			const userInput = ctx.text ?? "";
+			const input = { text: "", imageUrl: "" };
+
+			if ('message' in ctx.update && 'photo' in ctx.update.message) {
+				const message = ctx.update.message;
+				const photos = message.photo;
+				
+				if (photos && photos.length > 0) {
+					const fileId = photos[photos.length - 1].file_id;
+					const file = await ctx.telegram.getFile(fileId);
+					input.imageUrl = `https://api.telegram.org/file/bot${this.config.BOT_TOKEN}/${file.file_path}`;
+					input.text = message.caption || "";
+				}
+			} else {
+				input.text = ctx.text || "";
+			}
 
 			console.log("User input:", ctx.update);
 
@@ -234,7 +271,7 @@ class Main {
 				(category) => category.name,
 			);
 			const transaction = await this.aiService.parseTransaction(
-				userInput,
+				input,
 				accountNames,
 				categoryNames,
 			);
