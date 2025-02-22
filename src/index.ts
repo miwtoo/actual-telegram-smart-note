@@ -1,243 +1,17 @@
-import { Telegraf, type Context } from "telegraf";
-import api from "@actual-app/api";
-import {
-	GoogleGenerativeAI,
-	type GenerationConfig,
-	type GenerativeModel,
-} from "@google/generative-ai";
-import { SchemaType } from "@google/generative-ai/server";
-import dayjs from "dayjs";
-import type { APIAccountEntity } from "@actual-app/api/@types/loot-core/server/api-models";
-
-process.loadEnvFile("./.env");
-
-class Config {
-	readonly BOT_TOKEN: string;
-	readonly OPENAI_API_KEY: string;
-	readonly ACTUAL_API_URL: string;
-	readonly ACTUAL_API_TOKEN: string;
-	readonly ACTUAL_BUDGET_ID: string;
-	readonly GEMINI_API_KEY: string;
-
-	constructor() {
-		this.BOT_TOKEN = process.env.BOT_TOKEN ?? "";
-		this.OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? "";
-		this.ACTUAL_API_URL = process.env.ACTUAL_API_URL ?? "";
-		this.ACTUAL_API_TOKEN = process.env.ACTUAL_API_TOKEN ?? "";
-		this.ACTUAL_BUDGET_ID = process.env.ACTUAL_BUDGET_ID ?? "";
-		this.GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? "";
-	}
-}
-
-type Transaction = {
-	account: string;
-	date: string;
-	amount: number;
-	payee_name?: string;
-	category?: string;
-	notes?: string;
-};
-
-class GeminiService implements AIService {
-	private genAI: GoogleGenerativeAI;
-	private model: GenerativeModel;
-
-	constructor(apiKey: string) {
-		this.genAI = new GoogleGenerativeAI(apiKey);
-		this.model = this.genAI.getGenerativeModel({
-			model: "gemini-2.0-flash-exp",
-		});
-	}
-
-	async parseTransaction(
-		input: { text?: string; imageUrl?: string },
-		accountNames: string[],
-		categoryNames: string[],
-	): Promise<Transaction | null> {
-		try {
-			const chatSession = this.model.startChat({
-				generationConfig: this.getGenerationConfig(),
-				history: [
-					{
-						role: "user",
-						parts: [
-							{
-								text: `Extract transaction details from user input. default date is today ${dayjs().format("YYYY-MM-DD")}. with the following Account Name: ${accountNames}, Category Name: ${categoryNames}. using negative amount for expense and positive amount for income.`,
-							},
-						],
-					},
-				],
-			});
-
-			const messageParts = [];
-			
-			const { imageUrl, text } = input;
-			if (imageUrl) {
-				const imageResponse = await fetch(imageUrl);
-				const imageData = await imageResponse.arrayBuffer();
-				messageParts.push({
-					inlineData: {
-						data: Buffer.from(imageData).toString('base64'),
-						mimeType: "image/jpeg"
-					}
-				});
-			}
-			
-			if (text) {
-				messageParts.push({ text });
-			}
-
-			const result = await chatSession.sendMessage(messageParts);
-			return JSON.parse(result.response.text()) as Transaction;
-		} catch (error) {
-			console.error("Error parsing transaction:", error);
-			return null;
-		}
-	}
-
-	private getGenerationConfig(): GenerationConfig {
-		return {
-			temperature: 1,
-			topP: 0.95,
-			topK: 40,
-			maxOutputTokens: 8192,
-			responseMimeType: "application/json",
-			responseSchema: {
-				type: SchemaType.OBJECT,
-				properties: {
-					account: {
-						type: SchemaType.STRING,
-					},
-					date: {
-						type: SchemaType.STRING,
-					},
-					amount: {
-						type: SchemaType.NUMBER,
-					},
-					payee_name: {
-						type: SchemaType.STRING,
-					},
-					category: {
-						type: SchemaType.STRING,
-					},
-					notes: {
-						type: SchemaType.STRING,
-					},
-				},
-				required: ["account", "date", "amount"],
-			},
-		};
-	}
-}
-
-class ActualBudgetService {
-	private config: Config;
-	private apiInstance: typeof api;
-	private apiInitialized = false;
-
-	constructor(config: Config) {
-		this.config = config;
-		this.apiInstance = api;
-	}
-
-	async init(): Promise<void> {
-		if (this.apiInitialized) {
-			return;
-		}
-		await this.apiInstance.init({
-			dataDir: "./.cache",
-			serverURL: this.config.ACTUAL_API_URL,
-			password: this.config.ACTUAL_API_TOKEN,
-		});
-
-		await this.apiInstance.downloadBudget(this.config.ACTUAL_BUDGET_ID, {
-			password: this.config.ACTUAL_API_TOKEN,
-		});
-
-		this.apiInitialized = true;
-		console.log("API initialized successfully");
-	}
-
-	private async ensureInitialized(): Promise<void> {
-		if (!this.apiInitialized) {
-			await this.init();
-		}
-	}
-
-	async getAccounts() {
-		try {
-			await this.ensureInitialized();
-			return this.apiInstance.getAccounts();
-		} catch (error) {
-			console.error("Error getting accounts:", error);
-			throw error;
-		}
-	}
-
-	async getCategories() {
-		try {
-			await this.ensureInitialized();
-			return this.apiInstance.getCategories();
-		} catch (error) {
-			console.error("Error getting categories:", error);
-			throw error;
-		}
-	}
-
-	async addTransaction(
-		accountId: string,
-		transaction: Transaction[],
-	): Promise<"ok"> {
-		try {
-			await this.ensureInitialized();
-			return await this.apiInstance.addTransactions(accountId, transaction);
-		} catch (error) {
-			console.error("Error adding transaction:", error);
-			throw error;
-		}
-	}
-}
-
-interface AIService {
-	parseTransaction(
-		input: { text?: string; imageUrl?: string },
-		accountNames: string[],
-		categoryNames: string[],
-	): Promise<Transaction | null>;
-}
-
-class TelegramBot {
-	private bot: Telegraf<Context>;
-
-	constructor(botToken: string) {
-		this.bot = new Telegraf(botToken);
-	}
-
-	commandTransaction(callback: (ctx: Context) => void) {
-		this.bot.command("trx", callback);
-		this.bot.on("photo", callback);
-	}
-
-	currentBot() {
-		return this.bot;
-	}
-
-	launch() {
-		this.bot.launch();
-		process.once("SIGINT", () => this.bot.stop("SIGINT"));
-		process.once("SIGTERM", () => this.bot.stop("SIGTERM"));
-	}
-}
+import Config from "./config/config.ts";
+import TelegramBot from "./services/telegram.bot.ts";
+import ActualBudgetService from "./services/actual-budget.service.ts";
+import GeminiService from "./services/gemini.service.ts";
+import type { Context } from "telegraf";
 
 class Main {
 	private config: Config;
 	private telegramBotService: TelegramBot;
 	private actualBudgetService: ActualBudgetService;
-	private aiService: AIService;
+	private aiService: GeminiService;
 	constructor() {
 		this.config = new Config();
 		this.actualBudgetService = new ActualBudgetService(this.config);
-		// const openAIService = new OpenAIService(devConfig.OPENAI_API_KEY);
 		this.aiService = new GeminiService(this.config.GEMINI_API_KEY);
 		this.telegramBotService = new TelegramBot(this.config.BOT_TOKEN);
 	}
@@ -245,15 +19,14 @@ class Main {
 		const accounts = await this.actualBudgetService.getAccounts();
 		console.log("Accounts:", accounts);
 		const categories = await this.actualBudgetService.getCategories();
-		// console.log("Categories:", categories);
 
-		this.telegramBotService.commandTransaction(async (ctx) => {
+		this.telegramBotService.commandTransaction(async (ctx: Context) => {
 			const input = { text: "", imageUrl: "" };
 
-			if ('message' in ctx.update && 'photo' in ctx.update.message) {
+			if ("message" in ctx.update && "photo" in ctx.update.message) {
 				const message = ctx.update.message;
 				const photos = message.photo;
-				
+
 				if (photos && photos.length > 0) {
 					const fileId = photos[photos.length - 1].file_id;
 					const file = await ctx.telegram.getFile(fileId);
@@ -291,7 +64,7 @@ class Main {
 					categories.map((category) => [category.name, category.id]),
 				);
 
-				const updatedTransactionToId: Transaction = {
+				const updatedTransactionToId = {
 					...transaction,
 					amount: transaction.amount * 100,
 					account: accountMap.get(transaction.account) || transaction.account,
