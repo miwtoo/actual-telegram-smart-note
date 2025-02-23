@@ -3,6 +3,7 @@ import TelegramBot from "./services/telegram.bot.ts";
 import ActualBudgetService from "./services/actual-budget.service.ts";
 import GeminiService from "./services/gemini.service.ts";
 import type { Context } from "telegraf";
+import type { Transaction } from "./types/types.ts";
 
 class Main {
 	private config: Config;
@@ -43,11 +44,36 @@ class Main {
 			const categoryNames: string[] = categories.map(
 				(category) => category.name,
 			);
-			const transaction = await this.aiService.parseTransaction(
-				input,
-				accountNames,
-				categoryNames,
-			);
+
+			let transaction: Transaction | null = null;
+
+			if (input.imageUrl) {
+				// First extract info from image
+				const extractedInfo = await this.aiService.parseTransactionFromImage(
+					{
+						imageUrl: input.imageUrl,
+						text: input.text,
+					},
+					accountNames,
+					categoryNames,
+				);
+
+				if (extractedInfo) {
+					console.log("Extracted info from image:", extractedInfo);
+					// Then parse the extracted info into a transaction
+					transaction = await this.aiService.parseTransaction(
+						{ text: extractedInfo },
+						accountNames,
+						categoryNames,
+					);
+				}
+			} else {
+				transaction = await this.aiService.parseTransaction(
+					{ text: input.text },
+					accountNames,
+					categoryNames,
+				);
+			}
 
 			if (!transaction) {
 				return ctx.reply(
@@ -67,11 +93,12 @@ class Main {
 				const updatedTransactionToId = {
 					...transaction,
 					amount: transaction.amount * 100,
+					date: transaction.date,
 					account: accountMap.get(transaction.account) || transaction.account,
 					category:
 						categoryMap.get(transaction.category ?? "") || transaction.category,
 				};
-
+				console.log("updatedTransactionToId:", updatedTransactionToId);
 				await this.actualBudgetService.addTransaction(
 					updatedTransactionToId.account,
 					[updatedTransactionToId],
@@ -81,6 +108,7 @@ class Main {
 				);
 				ctx.reply("Transaction added successfully!");
 			} catch (error) {
+				console.error("Error adding transaction:", error);
 				ctx.reply("Failed to add transaction. Please try again.");
 			}
 		});
